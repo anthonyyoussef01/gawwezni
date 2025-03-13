@@ -1,4 +1,4 @@
-# 🌺 Al-Zaffa Wedding Assistant
+# 🌺 Gawwezni Wedding Assistant
 
 *A culturally-aware wedding planning chatbot for Egyptian weddings*
 

@@ -1,16 +1,20 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { CalendarIcon, SendIcon, DownloadIcon, HomeIcon } from 'lucide-react';
+import { CalendarIcon, SendIcon, DownloadIcon, HomeIcon, MoonIcon, SunIcon } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { ar, enUS } from 'date-fns/locale';
 import { translations } from '@/lib/translations';
 import { jsPDF } from 'jspdf';
+import { useTheme } from 'next-themes';
+import Cookies from 'js-cookie';
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -34,6 +38,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
   const [model, setModel] = useState<'groq' | 'gemini'>('groq'); // Default to gemini
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { theme, setTheme } = useTheme();
   const t = translations[language];
 
   const scrollToBottom = () => {
@@ -54,6 +59,10 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
       setHasInitialized(true);
     }
   }, [initialMessage, hasInitialized]);
+
+  useEffect(() => {
+    document.title = t.title;
+  }, [language, t.title]);
 
   useEffect(() => {
     const sendInitialResponse = async () => {
@@ -203,6 +212,12 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
     setIsProcessing(false);
   };
 
+  const handleThemeChange = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    Cookies.set('theme', newTheme, { expires: 365 });
+  };
+
   const downloadChat = () => {
     const doc = new jsPDF();
     const dateStr = format(new Date(), 'yyyy-MM-dd HH:mm');
@@ -237,10 +252,19 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
   return (
     <div className="flex flex-col h-screen max-h-screen p-4">
       <div className="flex justify-between items-center mb-4 px-2">
-        <Button variant="ghost" onClick={onRestart} className="gap-2">
-          <HomeIcon className="h-5 w-5" />
-          {t.actions.restart}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={onRestart} className="gap-2">
+            <HomeIcon className="h-5 w-5" />
+            {t.actions.restart}
+          </Button>
+          <Button variant="ghost" onClick={handleThemeChange} className="gap-2">
+            {theme === 'dark' ? (
+              <SunIcon className="h-5 w-5" />
+            ) : (
+              <MoonIcon className="h-5 w-5" />
+            )}
+          </Button>
+        </div>
         <div className="flex gap-2">
           <Button 
             variant={model === 'groq' ? 'default' : 'outline'} 
@@ -277,7 +301,21 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
                     : 'bg-muted'
                 }`}
               >
-                <p dir={language === 'ar' ? 'rtl' : 'ltr'}>{message.content}</p>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    p: ({node, ...props}) => <p dir={language === 'ar' ? 'rtl' : 'ltr'} {...props} />,
+                    h1: ({node, ...props}) => <h1 dir={language === 'ar' ? 'rtl' : 'ltr'} {...props} className='text-xl font-bold mt-4' />,
+                    ul: ({node, ...props}) => <ul dir={language === 'ar' ? 'rtl' : 'ltr'} {...props} className='list-disc pl-6' />,
+                    li: ({node, ...props}) => <li dir={language === 'ar' ? 'rtl' : 'ltr'} {...props} className='my-1' />,
+                    ol: ({node,...props}) => <ol dir={language === 'ar'? 'rtl' : 'ltr'} {...props} className='list-decimal pl-6' />,
+                    em: ({node,...props}) => <em {...props} className='italic' />,
+                    strong: ({node, ...props}) => <strong {...props} className='font-semibold' />,
+                    code: ({node, ...props}) => <code {...props} className='bg-muted px-1 rounded' />
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
                 <span className="text-xs opacity-70 mt-2 block">
                   {message.timestamp && format(message.timestamp, 'HH:mm', { 
                     locale: language === 'ar' ? ar : enUS 
