@@ -13,9 +13,9 @@ import { translations } from '@/lib/translations';
 import { jsPDF } from 'jspdf';
 
 interface Message {
-  text: string;
-  isUser: boolean;
-  timestamp: Date;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: Date;
 }
 
 interface ChatInterfaceProps {
@@ -24,35 +24,6 @@ interface ChatInterfaceProps {
   onRestart: () => void;
 }
 
-const getBotResponse = async (message: string, language: string, weddingDate?: Date, isDateChange: boolean = false): Promise<string> => {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  const t = translations[language as keyof typeof translations].chat;
-  
-  if (isDateChange) {
-    return t.dateChanged;
-  }
-
-  if (!weddingDate) {
-    return t.datePrompt;
-  }
-
-  const monthsUntilWedding = Math.ceil(
-    (weddingDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24 * 30)
-  );
-
-  if (monthsUntilWedding < 0) {
-    return t.invalidDate;
-  }
-
-  if (monthsUntilWedding > 12) {
-    return t.longTermPlanning(monthsUntilWedding);
-  } else if (monthsUntilWedding > 6) {
-    return t.midTermPlanning;
-  } else {
-    return t.shortTermPlanning;
-  }
-};
-
 export default function ChatInterface({ initialMessage, language, onRestart }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -60,6 +31,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [model, setModel] = useState<'groq' | 'gemini'>('gemini'); // Default to gemini
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
@@ -75,8 +47,8 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
   useEffect(() => {
     if (!hasInitialized) {
       setMessages([{
-        text: initialMessage,
-        isUser: true,
+        role: 'user',
+        content: initialMessage,
         timestamp: new Date(),
       }]);
       setHasInitialized(true);
@@ -87,37 +59,120 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
     const sendInitialResponse = async () => {
       if (messages.length === 1 && !isProcessing) {
         setIsProcessing(true);
-        const response = await getBotResponse(initialMessage, language, weddingDate);
-        setMessages(prev => [...prev, {
-          text: response,
-          isUser: false,
-          timestamp: new Date()
-        }]);
+        
+        // Add system message with wedding date if available
+        const systemMessages: Message[] = [];
+        if (weddingDate) {
+          systemMessages.push({
+            role: 'system',
+            content: `The user's wedding date is ${format(weddingDate, 'PPP', { locale: language === 'ar' ? ar : enUS })}. Provide wedding planning advice appropriate for this timeline.`,
+          });
+        }
+        
+        await sendMessageToAPI([...systemMessages, ...messages]);
         setIsProcessing(false);
       }
     };
     sendInitialResponse();
-  }, [messages, initialMessage, language, weddingDate]);
+  }, [messages, weddingDate]);
+
+  const sendMessageToAPI = async (messagesToSend: Message[]) => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: messagesToSend,
+          model,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('Failed to get response reader');
+      }
+
+      let botMessage = '';
+      
+      // Add a new message from the assistant
+      const botMessageObj: Message = {
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, botMessageObj]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+            
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.text || '';
+              if (content) {
+                botMessage += content;
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  newMessages[newMessages.length - 1].content = botMessage;
+                  return newMessages;
+                });
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error sending message to API:', error);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, there was an error processing your request. Please try again later.',
+        timestamp: new Date(),
+      }]);
+    }
+  };
 
   const handleSend = async () => {
     if (!newMessage.trim() || isProcessing) return;
 
     setIsProcessing(true);
-    const userMessage = {
-      text: newMessage,
-      isUser: true,
+    const userMessage: Message = {
+      role: 'user',
+      content: newMessage,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
     setNewMessage('');
 
-    const response = await getBotResponse(newMessage, language, weddingDate);
-    setMessages(prev => [...prev, {
-      text: response,
-      isUser: false,
-      timestamp: new Date()
-    }]);
+    // Add system message with wedding date if available
+    const systemMessages: Message[] = [];
+    if (weddingDate) {
+      systemMessages.push({
+        role: 'system',
+        content: `The user's wedding date is ${format(weddingDate, 'PPP', { locale: language === 'ar' ? ar : enUS })}. Provide wedding planning advice appropriate for this timeline.`,
+      });
+    }
+
+    await sendMessageToAPI([...systemMessages, ...messages, userMessage]);
     setIsProcessing(false);
   };
 
@@ -128,31 +183,23 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
     setWeddingDate(newDate);
     setIsCalendarOpen(false);
     
-    const dateMessage = {
-      text: format(newDate, 'PPP', { locale: language === 'ar' ? ar : enUS }),
-      isUser: true,
+    const dateMessage: Message = {
+      role: 'user',
+      content: `My wedding date is ${format(newDate, 'PPP', { locale: language === 'ar' ? ar : enUS })}`,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, dateMessage]);
 
     setIsProcessing(true);
-    const response = await getBotResponse('', language, newDate, isDateChange);
-    setMessages(prev => [...prev, {
-      text: response,
-      isUser: false,
-      timestamp: new Date()
-    }]);
-
-    if (isDateChange) {
-      const followUpResponse = await getBotResponse('', language, newDate);
-      setMessages(prev => [...prev, {
-        text: followUpResponse,
-        isUser: false,
-        timestamp: new Date()
-      }]);
-    }
     
+    // Add system message with wedding date
+    const systemMessages: Message[] = [{
+      role: 'system',
+      content: `The user's wedding date is ${format(newDate, 'PPP', { locale: language === 'ar' ? ar : enUS })}. Provide wedding planning advice appropriate for this timeline.`,
+    }];
+
+    await sendMessageToAPI([...systemMessages, ...messages, dateMessage]);
     setIsProcessing(false);
   };
 
@@ -171,8 +218,8 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
     
     let y = 40;
     messages.forEach((msg) => {
-      const prefix = msg.isUser ? `${t.chat.you}: ` : `${t.chat.bot}: `;
-      const text = `${prefix}${msg.text}`;
+      const prefix = msg.role === 'user' ? `${t.chat.you}: ` : `${t.chat.bot}: `;
+      const text = `${prefix}${msg.content}`;
       
       const lines = doc.splitTextToSize(text, 170);
       doc.text(lines, 20, y);
@@ -194,10 +241,26 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
           <HomeIcon className="h-5 w-5" />
           {t.actions.restart}
         </Button>
-        <Button variant="outline" onClick={downloadChat} className="gap-2">
-          <DownloadIcon className="h-5 w-5" />
-          {t.actions.download}
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant={model === 'groq' ? 'default' : 'outline'} 
+            onClick={() => setModel('groq')} 
+            size="sm"
+          >
+            Groq
+          </Button>
+          <Button 
+            variant={model === 'gemini' ? 'default' : 'outline'} 
+            onClick={() => setModel('gemini')} 
+            size="sm"
+          >
+            Gemini
+          </Button>
+          <Button variant="outline" onClick={downloadChat} className="gap-2">
+            <DownloadIcon className="h-5 w-5" />
+            {t.actions.download}
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1 p-4 rounded-lg border" ref={scrollAreaRef}>
@@ -205,18 +268,18 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
           {messages.map((message, index) => (
             <div
               key={index}
-              className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
                 className={`max-w-[80%] p-4 rounded-lg ${
-                  message.isUser
+                  message.role === 'user'
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-muted'
                 }`}
               >
-                <p dir={language === 'ar' ? 'rtl' : 'ltr'}>{message.text}</p>
+                <p dir={language === 'ar' ? 'rtl' : 'ltr'}>{message.content}</p>
                 <span className="text-xs opacity-70 mt-2 block">
-                  {format(message.timestamp, 'HH:mm', { 
+                  {message.timestamp && format(message.timestamp, 'HH:mm', { 
                     locale: language === 'ar' ? ar : enUS 
                   })}
                 </span>
@@ -268,7 +331,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
         <Button 
           size="icon" 
           onClick={handleSend} 
-          disabled={!newMessage.trim() || isProcessing || !weddingDate}
+          disabled={!newMessage.trim() || isProcessing}
         >
           <SendIcon className="h-5 w-5" />
         </Button>
