@@ -31,7 +31,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [model, setModel] = useState<'groq' | 'gemini'>('gemini'); // Default to gemini
+  const [model, setModel] = useState<'groq' | 'gemini'>('groq'); // Default to gemini
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
@@ -84,7 +84,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: messagesToSend,
+          messages: messagesToSend.map(({ timestamp, ...rest }) => rest), // excluding the timestamps
           model,
         }),
       });

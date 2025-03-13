@@ -15,13 +15,6 @@ export async function* generateGroqStream(messages: Message[], apiKey: string) {
       temperature: 0.7,
     }),
   });
-    
-  console.log('Groq Request Body:', {
-    model: 'llama3-8b-8192',
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
-    stream: true,
-    temperature: 0.7,
-  });
 
   if (!response.ok) {
     console.error('Groq API Error Details:', {
@@ -60,7 +53,8 @@ export async function* generateGroqStream(messages: Message[], apiKey: string) {
           const content = parsed.choices[0]?.delta?.content || '';
           if (content) yield content;
         } catch (e) {
-          console.error('Error parsing SSE data:', e);
+          console.error('Error parsing SSE data:', e, 'Raw data:', data);
+          yield '⚠️ Streaming error - please try again'; 
         }
       }
     }
