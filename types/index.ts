@@ -14,7 +14,7 @@ export interface Vendor {
   location: string;
   services: string[];
   pricing: string;
-  contactInfo: string;
+  contactInfo?: string;
   rating?: number;
   description?: string;
 }

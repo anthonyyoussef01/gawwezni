@@ -32,7 +32,7 @@ export const translations = {
     }
   },
   en: {
-    title: 'Gawezni',
+    title: 'Gawwezni',
     subtitle: 'Your Smart Wedding Planner',
     description: 'We help you plan your perfect wedding from start to finish',
     features: {
@@ -59,7 +59,7 @@ export const translations = {
       shortTermPlanning: 'Focus should be on final details like invitations and seating arrangements. Need help with any of these?',
       weddingDate: 'Wedding Date',
       you: 'You',
-      bot: 'Gawezni'
+      bot: 'Gawwezni'
     }
   }
 } as const;

@@ -246,7 +246,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
       }
     });
     
-    doc.save('gawezni-chat.pdf');
+    doc.save('gawwezni-chat.pdf');
   };
 
   return (

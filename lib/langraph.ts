@@ -3,7 +3,6 @@ import { Document } from 'langchain/document';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { CSVLoader } from "@langchain/community/document_loaders/fs/csv";
 import { 
   RunnableSequence, 
   RunnablePassthrough
@@ -71,15 +70,61 @@ function filterRelevantRecords(records: any[], query: string): any[] {
   const queryLower = query.toLowerCase();
   const keywords = queryLower.split(/\s+/);
   
-  return records.filter(record => {
+  // Define semantic mappings for common wedding themes/types
+  const semanticMappings: Record<string, string[]> = {
+    'beach': ['beach', 'coastal', 'sea', 'shore', 'ocean', 'mediterranean', 'red sea', 'alexandria'],
+    'luxury': ['luxury', 'luxurious', 'high-end', 'premium', 'exclusive', 'elegant'],
+    'traditional': ['traditional', 'cultural', 'egyptian', 'pharaonic', 'ancient'],
+    'outdoor': ['outdoor', 'garden', 'nature', 'open-air', 'park'],
+    'indoor': ['indoor', 'hall', 'ballroom', 'hotel', 'venue'],
+    'budget': ['budget', 'affordable', 'inexpensive', 'cheap', 'cost-effective'],
+  };
+  
+  // Extract theme keywords from the query
+  const themeKeywords: string[] = [];
+  Object.entries(semanticMappings).forEach(([theme, relatedTerms]) => {
+    if (relatedTerms.some(term => queryLower.includes(term))) {
+      themeKeywords.push(theme);
+      // Add all related terms to enhance matching
+      themeKeywords.push(...relatedTerms);
+    }
+  });
+  
+  // If we identified themes, use them for filtering
+  const searchTerms = themeKeywords.length > 0 ? themeKeywords : keywords;
+  
+  // Filter records based on the search terms
+  const filteredRecords = records.filter(record => {
     // Convert all record values to a single string for searching
     const recordString = Object.values(record).join(' ').toLowerCase();
     
-    // Check if any keyword is present in the record
-    return keywords.some(keyword => 
-      keyword.length > 3 && recordString.includes(keyword)
+    // Check if any search term is present in the record
+    return searchTerms.some(term => 
+      term.length > 3 && recordString.includes(term)
     );
   });
+  
+  // If no matches found, return a subset of records that might be generally useful
+  if (filteredRecords.length === 0) {
+    // For beach weddings specifically, prioritize vendors in coastal areas
+    if (themeKeywords.includes('beach')) {
+      return records.filter(record => {
+        const location = (record.location || '').toLowerCase();
+        return location.includes('alexandria') || 
+               location.includes('hurghada') || 
+               location.includes('sharm') ||
+               location.includes('red sea') ||
+               location.includes('mediterranean');
+      });
+    }
+    
+    // For other cases, return top-rated vendors as a fallback
+    return records
+      .sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0))
+      .slice(0, 5);
+  }
+  
+  return filteredRecords;
 }
 
 // Initialize vector store with our wedding data
@@ -111,6 +156,32 @@ export async function initializeVectorStore(userQuery: string) {
   });
   
   const weddingInfoDocs = await textSplitter.createDocuments([weddingInfoText]);
+  
+  // Add a special document for beach weddings if that's the query
+  if (userQuery.toLowerCase().includes('beach')) {
+    const beachWeddingInfo = new Document({
+      pageContent: `
+Beach Weddings in Egypt:
+Egypt offers beautiful beach wedding locations along the Mediterranean and Red Sea coasts.
+Popular beach wedding destinations include:
+- Alexandria: Mediterranean beaches with historic charm
+- Hurghada: Red Sea resort town with luxury beachfront hotels
+- Sharm El-Sheikh: Premium Red Sea destination with international resorts
+- El Gouna: Upscale Red Sea resort town with pristine beaches
+- Dahab: More relaxed beach town with bohemian atmosphere
+
+Beach wedding considerations:
+- Best seasons: Spring (March-May) and Fall (September-November)
+- Consider sunset ceremonies for the best lighting and temperature
+- Local permits may be required for public beaches
+- Private resort beaches offer more amenities and privacy
+- Typical costs range from $5,000-$20,000 depending on guest count and luxury level
+      `,
+      metadata: { source: 'beach_wedding_guide' }
+    });
+    
+    weddingInfoDocs.push(beachWeddingInfo);
+  }
   
   // Combine all docs
   const allDocs = [...vendorDocs, ...venueDocs, ...weddingInfoDocs];
@@ -150,7 +221,9 @@ export async function createRagChain(messages: Message[], modelType: 'groq' | 'g
         // Add context to the messages
         const contextMessage: Message = {
           role: 'system',
-          content: `You are a wedding planning assistant specializing in Egyptian weddings. Use the following information to answer the user's question: ${context}`
+          content: `You are a wedding planning assistant specializing in Egyptian weddings. Use the following information to answer the user's question: ${context}
+          
+If the user is asking about a specific type of wedding (like beach weddings) and there's limited vendor information in the context, be creative and provide general recommendations based on Egyptian geography and wedding customs. Always mention specific locations in Egypt that would be suitable for the requested wedding type.`
         };
         
         const augmentedMessages = [contextMessage, ...messages];
