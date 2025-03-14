@@ -28,7 +28,7 @@ interface ChatInterfaceProps {
   onRestart: () => void;
 }
 
-export default function ChatInterface({ initialMessage, language, onRestart }: ChatInterfaceProps) {
+export default function ChatInterface({ initialMessage, language }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [weddingDate, setWeddingDate] = useState<Date>();
@@ -260,7 +260,7 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
     <div className="flex flex-col h-screen max-h-screen p-4">
       <div className="flex justify-between items-center mb-4 px-2">
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={onRestart} className="gap-2">
+          <Button variant="ghost" onClick={() => window.dispatchEvent(new CustomEvent('restart'))} className="gap-2">
             <HomeIcon className="h-5 w-5" />
             {t.actions.restart}
           </Button>

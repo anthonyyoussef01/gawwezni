@@ -26,6 +26,7 @@ export interface Venue {
   amenities: string[];
   pricing: string;
   contactInfo: string;
+  rating?: number;
   description?: string;
 }
 

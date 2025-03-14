@@ -24,7 +24,8 @@ const embeddings = geminiEmbeddings;
 export async function loadAndParseCSV(filePath: string) {
   const fileContent = fs.readFileSync(filePath, 'utf-8');
   const records = parse(fileContent, {
-    columns: true,
+    columns: (headers: string[]) => headers.map(h => h.trim()),
+    trim: true,
     skip_empty_lines: true
   });
   return records;
@@ -72,12 +73,12 @@ function filterRelevantRecords(records: any[], query: string): any[] {
   
   // Define semantic mappings for common wedding themes/types
   const semanticMappings: Record<string, string[]> = {
-    'beach': ['beach', 'coastal', 'sea', 'shore', 'ocean', 'mediterranean', 'red sea', 'alexandria'],
-    'luxury': ['luxury', 'luxurious', 'high-end', 'premium', 'exclusive', 'elegant'],
+    'beach': ['beach', 'coastal', 'sea', 'shore', 'ocean', 'mediterranean', 'red sea', 'alexandria', 'hurghada', 'sharm el-sheikh', 'el gouna', 'dahab'],
+    'luxury': ['luxury', 'luxurious', 'high-end', 'premium', 'exclusive', 'elegant', 'exclusive'],
     'traditional': ['traditional', 'cultural', 'egyptian', 'pharaonic', 'ancient'],
-    'outdoor': ['outdoor', 'garden', 'nature', 'open-air', 'park'],
+    'outdoor': ['outdoor', 'garden', 'nature', 'open-air', 'park', 'treehouse'],
     'indoor': ['indoor', 'hall', 'ballroom', 'hotel', 'venue'],
-    'budget': ['budget', 'affordable', 'inexpensive', 'cheap', 'cost-effective'],
+    'budget': ['budget', 'affordable', 'inexpensive', 'cheap', 'cost-effective', 'economical']
   };
   
   // Extract theme keywords from the query
@@ -106,16 +107,11 @@ function filterRelevantRecords(records: any[], query: string): any[] {
   
   // If no matches found, return a subset of records that might be generally useful
   if (filteredRecords.length === 0) {
-    // For beach weddings specifically, prioritize vendors in coastal areas
-    if (themeKeywords.includes('beach')) {
-      return records.filter(record => {
-        const location = (record.location || '').toLowerCase();
-        return location.includes('alexandria') || 
-               location.includes('hurghada') || 
-               location.includes('sharm') ||
-               location.includes('red sea') ||
-               location.includes('mediterranean');
-      });
+    // If query is about a specific venue, return top-rated venues
+    if (queryLower.includes('venue')) {
+      return records
+       .sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0))
+       .slice(0, 5);
     }
     
     // For other cases, return top-rated vendors as a fallback
@@ -157,32 +153,6 @@ export async function initializeVectorStore(userQuery: string) {
   
   const weddingInfoDocs = await textSplitter.createDocuments([weddingInfoText]);
   
-  // Add a special document for beach weddings if that's the query
-  if (userQuery.toLowerCase().includes('beach')) {
-    const beachWeddingInfo = new Document({
-      pageContent: `
-Beach Weddings in Egypt:
-Egypt offers beautiful beach wedding locations along the Mediterranean and Red Sea coasts.
-Popular beach wedding destinations include:
-- Alexandria: Mediterranean beaches with historic charm
-- Hurghada: Red Sea resort town with luxury beachfront hotels
-- Sharm El-Sheikh: Premium Red Sea destination with international resorts
-- El Gouna: Upscale Red Sea resort town with pristine beaches
-- Dahab: More relaxed beach town with bohemian atmosphere
-
-Beach wedding considerations:
-- Best seasons: Spring (March-May) and Fall (September-November)
-- Consider sunset ceremonies for the best lighting and temperature
-- Local permits may be required for public beaches
-- Private resort beaches offer more amenities and privacy
-- Typical costs range from $5,000-$20,000 depending on guest count and luxury level
-      `,
-      metadata: { source: 'beach_wedding_guide' }
-    });
-    
-    weddingInfoDocs.push(beachWeddingInfo);
-  }
-  
   // Combine all docs
   const allDocs = [...vendorDocs, ...venueDocs, ...weddingInfoDocs];
   
@@ -223,7 +193,7 @@ export async function createRagChain(messages: Message[], modelType: 'groq' | 'g
           role: 'system',
           content: `You are a wedding planning assistant specializing in Egyptian weddings. Use the following information to answer the user's question: ${context}
           
-If the user is asking about a specific type of wedding (like beach weddings) and there's limited vendor information in the context, be creative and provide general recommendations based on Egyptian geography and wedding customs. Always mention specific locations in Egypt that would be suitable for the requested wedding type.`
+If the user is asking about a specific type of wedding and there's limited vendor information in the context, be creative and provide general recommendations based on Egyptian geography and wedding customs. Always mention specific locations in Egypt that would be suitable for the requested wedding type.`
         };
         
         const augmentedMessages = [contextMessage, ...messages];
