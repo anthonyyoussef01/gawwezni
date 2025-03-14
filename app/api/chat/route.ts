@@ -1,8 +1,11 @@
 import { NextRequest } from 'next/server';
-import { ChatRequest } from '@/types';
+import { ChatRequest, RateLimitData } from '@/types';
 import { streamChatResponse } from '@/lib/stream-utils';
 
 export const dynamic = 'force-dynamic';
+
+// Rate limiting map
+const rateLimitMap = new Map<string, RateLimitData>();
 
 // API route handler for chat requests
 export async function POST(request: NextRequest) {
@@ -46,8 +49,43 @@ export async function POST(request: NextRequest) {
     // Process the chat request and stream the response using the RAG-enhanced stream utility
     const stream = await streamChatResponse(messages, model);
     
+    // Rate limiting logic
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'unknown';
+    const currentTime = Date.now();
+    let rateData = rateLimitMap.get(ip) || { count: 0, resetAt: currentTime + 604800000 }; // 7 days
+
+    if (currentTime > rateData.resetAt) {
+      rateData = { count: 0, resetAt: currentTime + 604800000 };
+    }
+
+    if (rateData.count >= 7) {
+      return new Response(JSON.stringify({ 
+        error: 'Rate limit exceeded',
+        reset: rateData.resetAt 
+      }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RateLimit-Limit': '7',
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': rateData.resetAt.toString()
+        }
+      });
+    }
+
+    rateData.count++;
+    rateLimitMap.set(ip, rateData);
+
+    // Prepare rate limit headers
+    const rateHeaders = {
+      'X-RateLimit-Limit': '7',
+      'X-RateLimit-Remaining': (7 - rateData.count).toString(),
+      'X-RateLimit-Reset': rateData.resetAt.toString()
+    };
+
     return new Response(stream as unknown as ReadableStream, {
       headers: {
+        ...rateHeaders,
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',

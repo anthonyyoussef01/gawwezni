@@ -28,3 +28,8 @@ export interface Venue {
   contactInfo: string;
   description?: string;
 }
+
+export interface RateLimitData {
+  count: number;
+  resetAt: number;
+}

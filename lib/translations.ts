@@ -29,6 +29,11 @@ export const translations = {
       weddingDate: 'تاريخ الزفاف',
       you: 'أنت',
       bot: 'جوزني'
+    },
+    errors: {
+      rateLimitExceeded: 'لقد تجاوزت الحد الأسبوعي لرسائلك.',
+      tryAfter: 'الرجاء المحاولة مرة أخرى بعد',
+      generalError: 'حدث خطأ. يرجى المحاولة مرة أخرى.'
     }
   },
   en: {
@@ -60,6 +65,11 @@ export const translations = {
       weddingDate: 'Wedding Date',
       you: 'You',
       bot: 'Gawwezni'
+    },
+    errors: {
+      rateLimitExceeded: 'You\'ve reached your weekly message limit.',
+      tryAfter: 'Please try again after',
+      generalError: 'An error occurred. Please try again.'
     }
   }
 } as const;

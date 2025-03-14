@@ -99,7 +99,13 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
       });
 
       if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
+        const errorData = await response.json();
+        const resetTime = response.headers.get('X-RateLimit-Reset');
+        const errorMessage = response.status === 429 
+          ? `${t.errors.rateLimitExceeded} ${t.errors.tryAfter} ${format(new Date(Number(resetTime)), 'PPP pp', { locale: language === 'ar' ? ar : enUS })}`
+          : t.errors.generalError;
+        
+        throw new Error(errorMessage);
       }
 
       const reader = response.body?.getReader();
@@ -151,9 +157,10 @@ export default function ChatInterface({ initialMessage, language, onRestart }: C
       }
     } catch (error) {
       console.error('Error sending message to API:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: 'Sorry, there was an error processing your request. Please try again later.',
+        content: errorMessage,
         timestamp: new Date(),
       }]);
     }
