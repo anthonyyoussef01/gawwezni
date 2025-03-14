@@ -1,15 +1,12 @@
-import { Message, Vendor, Venue } from '@/types';
-import { Document } from 'langchain/document';
-import { MemoryVectorStore } from 'langchain/vectorstores/memory';
-import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { 
-  RunnableSequence, 
-  RunnablePassthrough
-} from "@langchain/core/runnables";
+import {Message} from '@/types';
+import {Document} from 'langchain/document';
+import {MemoryVectorStore} from 'langchain/vectorstores/memory';
+import {GoogleGenerativeAIEmbeddings} from '@langchain/google-genai';
+import {RecursiveCharacterTextSplitter} from 'langchain/text_splitter';
+import {RunnablePassthrough, RunnableSequence} from "@langchain/core/runnables";
 import path from 'path';
 import fs from 'fs';
-import { parse } from 'csv-parse/sync';
+import {parse} from 'csv-parse/sync';
 
 // Setup vector store with embeddings
 const geminiEmbeddings = new GoogleGenerativeAIEmbeddings({
@@ -23,19 +20,18 @@ const embeddings = geminiEmbeddings;
 // Function to load and parse CSV data
 export async function loadAndParseCSV(filePath: string) {
   const fileContent = fs.readFileSync(filePath, 'utf-8');
-  const records = parse(fileContent, {
+  return parse(fileContent, {
     columns: (headers: string[]) => headers.map(h => h.trim()),
     trim: true,
     skip_empty_lines: true
   });
-  return records;
 }
 
 // Function to convert records to documents
 function recordsToDocuments(records: any[], type: 'vendor' | 'venue'): Document[] {
   return records.map(record => {
     // Create a formatted string representation of the record
-    let content = '';
+    let content: string = '';
     if (type === 'vendor') {
       content = `Vendor: ${record.name || 'N/A'}\n` +
                 `Type: ${record.type || 'N/A'}\n` +
@@ -156,14 +152,12 @@ export async function initializeVectorStore(userQuery: string) {
   // Combine all docs
   const allDocs = [...vendorDocs, ...venueDocs, ...weddingInfoDocs];
   
-  // Create vector store
-  const vectorStore = await MemoryVectorStore.fromDocuments(allDocs, embeddings);
-  
-  return vectorStore;
+  // Create and return vector store
+  return await MemoryVectorStore.fromDocuments(allDocs, embeddings);
 }
 
 // Create RAG chain with LangGraph
-export async function createRagChain(messages: Message[], modelType: 'groq' | 'gemini') {
+export async function createRagChain(messages: Message[]) {
   // Format the user query from the last user message
   const userQuery = messages.filter(m => m.role === 'user').pop()?.content || '';
   
@@ -175,9 +169,9 @@ export async function createRagChain(messages: Message[], modelType: 'groq' | 'g
     k: 5, // Return top 5 most relevant documents
   });
   
-  // Create context from retrieved documents
-  const retrievalChain = RunnableSequence.from([
-    { original_input: new RunnablePassthrough() },
+  // Create and return context from retrieved documents
+  return RunnableSequence.from([
+    {original_input: new RunnablePassthrough()},
     {
       retrieved_documents: async (input: any) => {
         const docs = await retriever.getRelevantDocuments(input.original_input);
@@ -187,7 +181,7 @@ export async function createRagChain(messages: Message[], modelType: 'groq' | 'g
     {
       final_result: async (input: any) => {
         const context = input.retrieved_documents;
-        
+
         // Add context to the messages
         const contextMessage: Message = {
           role: 'system',
@@ -195,14 +189,12 @@ export async function createRagChain(messages: Message[], modelType: 'groq' | 'g
           
 If the user is asking about a specific type of wedding and there's limited vendor information in the context, be creative and provide general recommendations based on Egyptian geography and wedding customs. Always mention specific locations in Egypt that would be suitable for the requested wedding type.`
         };
-        
+
         const augmentedMessages = [contextMessage, ...messages];
-        
+
         // This will be implemented in the main streaming function
-        return { messages: augmentedMessages, context };
+        return {messages: augmentedMessages, context};
       }
     }
   ]);
-  
-  return retrievalChain;
 }

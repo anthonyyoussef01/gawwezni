@@ -99,7 +99,6 @@ export default function ChatInterface({ initialMessage, language }: ChatInterfac
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
         const resetTime = response.headers.get('X-RateLimit-Reset');
         const errorMessage = response.status === 429 
           ? `${t.errors.rateLimitExceeded} ${t.errors.tryAfter} ${format(new Date(Number(resetTime)), 'PPP pp', { locale: language === 'ar' ? ar : enUS })}`
@@ -194,8 +193,6 @@ export default function ChatInterface({ initialMessage, language }: ChatInterfac
 
   const handleDateSelect = async (newDate: Date | undefined) => {
     if (!newDate) return;
-    
-    const isDateChange = weddingDate !== undefined;
     setWeddingDate(newDate);
     setIsCalendarOpen(false);
     
